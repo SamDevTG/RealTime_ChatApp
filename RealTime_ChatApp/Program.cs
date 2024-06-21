@@ -1,27 +1,91 @@
-var builder = WebApplication.CreateBuilder(args);
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Identity;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
+using RealTime_ChatApp.Data;
+using RealTime_ChatApp.Hubs;
+using RealTime_ChatApp.Models;
+using RealTime_ChatApp.Services;
+using System;
 
-// Add services to the container.
-builder.Services.AddControllersWithViews();
-
-var app = builder.Build();
-
-// Configure the HTTP request pipeline.
-if (!app.Environment.IsDevelopment())
+public class Program
 {
-    app.UseExceptionHandler("/Home/Error");
-    // The default HSTS value is 30 days. You may want to change this for production scenarios, see https://aka.ms/aspnetcore-hsts.
-    app.UseHsts();
+    public static void Main(string[] args)
+    {
+        var builder = WebApplication.CreateBuilder(args);
+
+        // Verificar se estamos em tempo de design ou tempo de execução
+        var isDesignTime = string.IsNullOrEmpty(Environment.GetEnvironmentVariable("DOTNET_RUNNING_IN_CONTAINER"));
+
+        if (!isDesignTime)
+        {
+            // Em tempo de execução, inicializar o SQLitePCL
+            SQLitePCL.Batteries.Init();
+        }
+
+        // Adicionar serviços ao contêiner
+        builder.Services.AddDbContext<ApplicationDbContext>(options =>
+        {
+            if (isDesignTime)
+            {
+                // Configuração para tempo de design
+                options.UseSqlite(builder.Configuration.GetConnectionString("DefaultConnection"));
+            }
+            else
+            {
+                // Configuração para tempo de execução
+                options.UseSqlite(builder.Configuration.GetConnectionString("DefaultConnection"), 
+                                  sqliteOptions => sqliteOptions.CommandTimeout(60));
+            }
+        });
+
+        builder.Services.AddIdentity<User, IdentityRole>(options => options.SignIn.RequireConfirmedAccount = true)
+            .AddEntityFrameworkStores<ApplicationDbContext>()
+            .AddDefaultUI()
+            .AddDefaultTokenProviders();
+
+        builder.Services.AddControllersWithViews();
+        builder.Services.AddRazorPages();
+        builder.Services.AddSignalR();
+
+        // Registering custom services
+        builder.Services.AddScoped<PasswordHasherService>();
+        builder.Services.AddScoped<AuthService>();
+
+        var app = builder.Build();
+
+        // Configurar o pipeline de solicitação HTTP
+        if (app.Environment.IsDevelopment())
+        {
+            app.UseDeveloperExceptionPage();
+        }
+        else
+        {
+            app.UseExceptionHandler("/Home/Error");
+            app.UseHsts();
+        }
+
+        app.UseHttpsRedirection();
+        app.UseStaticFiles();
+
+        app.UseRouting();
+
+        app.UseAuthentication();
+        app.UseAuthorization();
+
+        app.UseEndpoints(endpoints =>
+        {
+            endpoints.MapControllerRoute(
+                name: "default",
+                pattern: "{controller=Home}/{action=Index}/{id?}");
+            endpoints.MapRazorPages();
+            endpoints.MapHub<ChatHub>("/chatHub");
+            endpoints.MapControllers(); // Ensure API controllers are mapped
+        });
+
+        app.Run();
+    }
 }
-
-app.UseHttpsRedirection();
-app.UseStaticFiles();
-
-app.UseRouting();
-
-app.UseAuthorization();
-
-app.MapControllerRoute(
-    name: "default",
-    pattern: "{controller=Home}/{action=Index}/{id?}");
-
-app.Run();

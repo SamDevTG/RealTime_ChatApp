@@ -21,11 +21,16 @@ public class AccountController : Controller
     [HttpPost]
     public async Task<IActionResult> Register(RegisterViewModel model)
     {
+        if (model is null)
+        {
+            throw new ArgumentNullException(nameof(model));
+        }
+
         if (ModelState.IsValid)
         {
             var user = new User
             {
-                Id = Guid.NewGuid(),
+                Id = Guid.NewGuid().ToString(),
                 Username = model.Username,
                 Email = model.Email,
                 CreatedAt = DateTime.Now
